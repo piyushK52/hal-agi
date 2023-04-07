@@ -1,0 +1,2 @@
+# hal-agi
+AGI assistant
