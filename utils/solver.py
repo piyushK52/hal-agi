@@ -3,8 +3,11 @@ from utils.ai_agent.ai_agent import get_ai_agent
 from utils.task_tree import TaskNode, print_level_wise_tree
 
 
-def solve(task_node: TaskNode):
-    ai_agent = get_ai_agent(debug=True)
+def is_solved_or_null(node):
+    return node == None or node.result != None
+
+def solve(task_node: TaskNode, debug=False):
+    ai_agent = get_ai_agent(debug=debug)
 
     # generate sub-task tree
     tree_height = MAX_TREE_DEPTH
@@ -31,9 +34,30 @@ def solve(task_node: TaskNode):
                 node.third = third
         
         queue = next_level
+        print("new tasks created: ", [x.task for x in queue])
 
 
-    print_level_wise_tree(task_node)
+    # print_level_wise_tree(task_node)
 
-    # prioritize tasks in different levels
-    # get task results and combine the answer 
+    # get task results and combine the answer
+    def recursive_solver(node: TaskNode):
+        if not node:
+            return
+        
+        if not (is_solved_or_null(node.first) and is_solved_or_null(node.second) and is_solved_or_null(node.third)):
+            recursive_solver(node.first)
+            recursive_solver(node.second)
+            recursive_solver(node.third)
+            
+        data = ''
+        data += node.first.result if node.first else ''
+        data += node.second.result if node.second else ''
+        data += node.third.result if node.third else ''
+
+        data = data if data else None
+
+        res = ai_agent.solve_task(node.task, data)
+        node.result = res
+
+    recursive_solver(task_node)
+    return task_node.result
