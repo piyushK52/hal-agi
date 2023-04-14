@@ -19,6 +19,9 @@ class AIAgent(ABC):
     def solve_task(self, task: str):
         pass
 
+    def get_function_summary(self, code: str):
+        pass
+
 
 class OpenAI(AIAgent):
     def __init__(self):
@@ -87,6 +90,21 @@ class OpenAI(AIAgent):
         query += self.SOLVE_TASK_QUESTION + task
         res = self.get_query(query)
         return res['output']
+    
+    def get_function_summary(self, code: str, call_list_desc_map):
+        if not code:
+            return ''
+        
+        func_call_list_query = ''
+        if len(call_list_desc_map.keys()):
+            for k, v in call_list_desc_map.items():
+                func_call_list_query += f"{k} - {v}\n"
+            
+            func_call_list_query = 'Given the description of the following functions:\n' + func_call_list_query
+
+        query = func_call_list_query + " describe what this function does:\n" + code
+        res = self.get_query(query)
+        return res['output']
 
 
 class TestAIAgent(AIAgent):
@@ -101,6 +119,9 @@ class TestAIAgent(AIAgent):
 
     def solve_task(self, task: str, data=None):
         return 'solved'
+    
+    def get_function_summary(self, code: str, dict: dict):
+        return "does some random stuff"
     
 
 def get_ai_agent(debug=False) -> AIAgent:
