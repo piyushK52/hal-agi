@@ -25,6 +25,9 @@ class AIAgent(ABC):
     def get_class_summary(self, class_name, class_code, dict):
         pass
 
+    def get_text_embedding(self, text):
+        pass
+
 
 class OpenAI(AIAgent):
     def __init__(self):
@@ -135,6 +138,9 @@ class OpenAI(AIAgent):
         
         res = self.get_query(query)
         return res['output']
+    
+    def get_text_embedding(self, text):
+        return [1, 2, 3]
 
 class TestAIAgent(AIAgent):
     def __init__(self):
@@ -154,6 +160,9 @@ class TestAIAgent(AIAgent):
     
     def get_class_summary(self, class_name, class_code, dict):
         return "does some random class stuff"
+    
+    def get_text_embedding(self, text):
+        return [1, 2, 3]
 
 def get_ai_agent(debug=False) -> AIAgent:
     if debug:

@@ -1,3 +1,4 @@
+from repo.vector_repo.base import get_vector_db_client
 from utils.ai_agent.ai_agent import AIAgent, get_ai_agent
 from utils.codemap import CodeWorkspaceClient
 
@@ -28,7 +29,7 @@ def generate_function_summaries(func, tree, ai_agent: AIAgent, workspace_client:
 
 def main():
     # settings
-    use_open_ai_agent = True
+    use_open_ai_agent = False
 
     # generate code tree
     workspace_client = CodeWorkspaceClient()
@@ -63,7 +64,21 @@ def main():
         print(func, " : ", summary)
 
     # store the description in the vector database
+    from repo.vector_repo.pgvector import MyTable
+
+    db_client = get_vector_db_client()
+    for idx, (func, summary) in enumerate(func_summary_map.items()):
+        summary_vector = ai_agent.get_text_embedding(summary)
+        data = dict(id=idx, function_name=func, vector=summary_vector)
+        db_client.add_vector_data([data])
+
+    all_data = db_client.fetch_all_data()
+    for row in all_data:
+        print(row)
+
+
     # take task input and convert into steps
+    # derive code for the steps
 
 if __name__ == '__main__':
     main()

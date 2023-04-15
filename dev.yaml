@@ -1,0 +1,14 @@
+version: "3"
+services:
+  pgres-db:
+    image: ankane/pgvector
+    ports:
+      - 5447:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_USERNAME=postgres
+volumes:
+  pgdata:
+    driver: local
