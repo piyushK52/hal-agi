@@ -19,7 +19,10 @@ class AIAgent(ABC):
     def solve_task(self, task: str):
         pass
 
-    def get_function_summary(self, code: str):
+    def get_function_summary(self, code: str, dict: dict, class_name: str):
+        pass
+
+    def get_class_summary(self, class_name, class_code, dict):
         pass
 
 
@@ -91,7 +94,7 @@ class OpenAI(AIAgent):
         res = self.get_query(query)
         return res['output']
     
-    def get_function_summary(self, code: str, call_list_desc_map):
+    def get_function_summary(self, code: str, call_list_desc_map, class_name):
         if not code:
             return ''
         
@@ -102,10 +105,36 @@ class OpenAI(AIAgent):
             
             func_call_list_query = 'Given the description of the following functions:\n' + func_call_list_query
 
-        query = func_call_list_query + " describe what this function does:\n" + code
+        class_query = ''
+        if class_name:
+            class_query = f"Some further information, this function belongs to this class - {class_name} - "
+
+        query = func_call_list_query + " describe what this function does:\n" + code + "\n" + class_query
         res = self.get_query(query)
         return res['output']
+    
+    def get_class_summary(self, class_name, class_code, call_list_desc_map):
+        if not class_name:
+            return ''
+        
+        class_method_list_query = ''
+        if len(call_list_desc_map.keys()):
+            for k, v in call_list_desc_map.items():
+                class_method_list_query += f"{k} - {v}\n"
+            
+            class_method_list_query = 'Given the description of the following functions present in this class:\n' + class_method_list_query
 
+        class_code_query = ''
+        if not class_method_list_query:
+            class_code_query = 'Given the following code of a class: ' + class_code
+        
+        if class_method_list_query:
+            query = class_method_list_query + " describe what this class does:\n" + class_name
+        else:
+            query = class_code_query + " describe what this class does:\n" + class_name
+        
+        res = self.get_query(query)
+        return res['output']
 
 class TestAIAgent(AIAgent):
     def __init__(self):
@@ -120,9 +149,11 @@ class TestAIAgent(AIAgent):
     def solve_task(self, task: str, data=None):
         return 'solved'
     
-    def get_function_summary(self, code: str, dict: dict):
+    def get_function_summary(self, code: str, dict: dict, class_name: str):
         return "does some random stuff"
     
+    def get_class_summary(self, class_name, class_code, dict):
+        return "does some random class stuff"
 
 def get_ai_agent(debug=False) -> AIAgent:
     if debug:
