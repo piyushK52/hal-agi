@@ -1,10 +1,10 @@
 from typing import List
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import insert, Integer, String, text, create_engine, select
+from sqlalchemy import desc, insert, Integer, String, text, create_engine, select
 from sqlalchemy.orm import Session, declarative_base, mapped_column
 
 from repo.vector_repo.base import VectorDB
-from settings import PG_DB_NAME, PG_HOST, PG_PASSWORD, PG_PORT, PG_USER
+from settings import PG_DB_NAME, PG_HOST, PG_PASSWORD, PG_PORT, PG_USER, VECTOR_EMBEDDING_DIM
 
 # TODO: create a separate migration file and use alembic to migrate the database
 Base = declarative_base()
@@ -13,7 +13,7 @@ class MyTable(Base):
 
     id = mapped_column(Integer, primary_key=True)
     function_name = mapped_column(String)
-    vector = mapped_column(Vector(3))
+    vector = mapped_column(Vector(VECTOR_EMBEDDING_DIM))
 
     def __repr__(self):
         return f'<MyTable(id={self.id}, function_name={self.function_name}, vector={self.vector})>'
@@ -32,6 +32,7 @@ class PgVectorDB(VectorDB):
 
     def add_vector_data(self, data_list: List[dict]):
         self.session.execute(insert(MyTable), data_list)
+        self.session.commit()
 
     def fetch_similar_vector_data(self, query_vector, query_limit):
         results = self.session.scalars(select(MyTable).order_by(MyTable.vector.max_inner_product(query_vector)).limit(query_limit))
@@ -45,3 +46,9 @@ class PgVectorDB(VectorDB):
         record_to_delete = self.session.scalars(select(MyTable).filter(MyTable.function_name == function_name)).first()
         if record_to_delete:
              self.session.delete(record_to_delete)
+             self.session.commit()
+
+    def get_last_id(self):
+        last_entry = self.session.query(MyTable).order_by(desc(MyTable.id)).first()
+        last_entry_id = last_entry.id
+        return last_entry_id

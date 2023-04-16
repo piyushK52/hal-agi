@@ -2,7 +2,7 @@ from abc import ABC
 import time
 import random
 
-from settings import FORCE_SUB_TASK_CREATION, OPENAI_API_KEY
+from settings import FORCE_SUB_TASK_CREATION, OPENAI_API_KEY, VECTOR_EMBEDDING_DIM
 from utils.ai_agent.constants import OpenAIModel
 
 
@@ -140,7 +140,9 @@ class OpenAI(AIAgent):
         return res['output']
     
     def get_text_embedding(self, text):
-        return [1, 2, 3]
+        text = text.replace("\n", " ")
+        model="text-embedding-ada-002"
+        return self.openai.Embedding.create(input = [text], model=model)['data'][0]['embedding']
 
 class TestAIAgent(AIAgent):
     def __init__(self):
@@ -162,7 +164,7 @@ class TestAIAgent(AIAgent):
         return "does some random class stuff"
     
     def get_text_embedding(self, text):
-        return [1, 2, 3]
+        return [1] * VECTOR_EMBEDDING_DIM
 
 def get_ai_agent(debug=False) -> AIAgent:
     if debug:
