@@ -10,6 +10,9 @@ class AIAgent(ABC):
     def __init__(self):
         pass
 
+    def get_query(self, query):
+        pass
+
     def is_breakdown_of_task_needed(self, task: str):
         pass
 
@@ -26,6 +29,18 @@ class AIAgent(ABC):
         pass
 
     def get_text_embedding(self, text):
+        pass
+
+    def get_task_breakup(self, query, func_desc_map):
+        pass
+
+    def generate_task_code(self, task, similar_func_code):
+        pass
+
+    def fix_code_issues(self, final_code):
+        pass
+
+    def generate_short_desc(self, function_summary):
         pass
 
 
@@ -143,6 +158,49 @@ class OpenAI(AIAgent):
         text = text.replace("\n", " ")
         model="text-embedding-ada-002"
         return self.openai.Embedding.create(input = [text], model=model)['data'][0]['embedding']
+    
+    def get_task_breakup(self, query, func_desc_map):
+        func_desc_query = ''
+        for k, v in func_desc_map.items():
+            func_desc_query += f"{k} - {v}\n"
+
+        func_desc_query += 'breakdown the following coding task by steps and return the steps. \
+            only return the steps, no other text. [ONLY return numbered steps]. use the function and \
+                their descriptions provided above to plan out things so that we can resuse maximum code: \n' + query
+        task_list = self.get_query(func_desc_query)
+        task_list = task_list['output'].split('\n')
+        return task_list
+    
+    def generate_task_code(self, task, similar_func_code):
+        base_query = 'generate the code for the following task (only return the python code). If you have any doubts or are not able to generate the code return the text "help: [your doubt/issue]":\n' + task
+        if similar_func_code:
+            query = 'given the following code of similar functions, try to use them directly or modify them: \n'
+            for k, v in similar_func_code.items():
+                query += 'function: ' + k + '\n'
+                query += 'code: ' + v + '\n'
+            
+            base_query = query + base_query
+        
+        res = self.get_query(base_query)
+        return res['output']
+    
+    def fix_code_issues(self, final_code):
+        code_issues = [
+            'remove unnecessary text from the code',
+            'fix syntax errors in the code',
+            'fix any bugs that you think the code might have'
+        ]
+        query = 'fix the following issues in the given code: \n'
+        for issue in code_issues:
+            query += issue + '\n'
+        query += 'code: ' + '\n' + final_code
+        res = self.get_query(query)
+        return res['output']
+    
+    def generate_short_desc(self, function_summary):
+        query = 'in two lines or less, generate a short description of the given text:\n' + function_summary
+        res = self.get_query(query)
+        return res['output']
 
 class TestAIAgent(AIAgent):
     def __init__(self):
@@ -165,6 +223,18 @@ class TestAIAgent(AIAgent):
     
     def get_text_embedding(self, text):
         return [1] * VECTOR_EMBEDDING_DIM
+    
+    def get_task_breakup(self, query, func_desc_map):
+        return ['code', 'code some more']
+    
+    def generate_task_code(self, task, similar_func_code):
+        return 'some random code'
+    
+    def generate_short_desc(self, function_summary):
+        return 'some random short description'
+    
+    def fix_code_issues(self, final_code):
+        return 'fixed code'
 
 def get_ai_agent(debug=False) -> AIAgent:
     if debug:

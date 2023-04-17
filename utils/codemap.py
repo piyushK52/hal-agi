@@ -6,7 +6,7 @@ class CodeWorkspaceClient:
     def __init__(self):
         # TODO: automatically pick everything from gitignore
         self.exclude_dirs = ['build', 'dist', '__pycache__', '.vscode', 'venv', '.git', '.DS_Store', 'videos']
-        self.exclude_files = ['README.md', 'LICENSE.txt', '.env', '.gitignore', 'requirements.txt', '__init__.py', 'dev.yaml']
+        self.exclude_files = ['README.md', 'LICENSE.txt', '.env', '.gitignore', 'requirements.txt', '__init__.py', 'dev.yaml', 'generated_code.py']
 
     def create_code_tree(self, code_str):
         funcs = {}
@@ -128,6 +128,10 @@ class CodeWorkspaceClient:
             excluded_file_list = self.exclude_files
         if not excluded_directory_list:
             excluded_directory_list = self.exclude_dirs
+        
+        # removing the class prefix
+        if '.' in function_name:
+            function_name = function_name.split('.')[-1]
         
         function_code = ''
         for root, dirs, files in os.walk(directory_path, topdown=True):

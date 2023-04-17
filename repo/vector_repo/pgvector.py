@@ -13,6 +13,7 @@ class MyTable(Base):
 
     id = mapped_column(Integer, primary_key=True)
     function_name = mapped_column(String)
+    short_desc = mapped_column(String)
     vector = mapped_column(Vector(VECTOR_EMBEDDING_DIM))
 
     def __repr__(self):

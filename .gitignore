@@ -6,5 +6,7 @@ __pycache__/
 # IDE
 .vscode
 
+# user generated
 venv
 .env
+generated_code.py
