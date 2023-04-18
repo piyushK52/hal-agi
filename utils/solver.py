@@ -61,3 +61,22 @@ def solve(task_node: TaskNode, debug=False):
 
     recursive_solver(task_node)
     return task_node.result
+
+def break_dict_by_length(data, max_chars):
+    result = []
+    current = {}
+    current_chars = 0
+
+    for k, v in data.items():
+        item_chars = len(str(k)) + len(str(v))
+        if current_chars + item_chars > max_chars:
+            result.append(current)
+            current = {}
+            current_chars = 0
+        current[k] = v
+        current_chars += item_chars
+
+    if current:
+        result.append(current)
+
+    return result

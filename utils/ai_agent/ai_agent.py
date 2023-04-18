@@ -1,6 +1,7 @@
 from abc import ABC
 import time
 import random
+from typing import List
 
 from settings import FORCE_SUB_TASK_CREATION, OPENAI_API_KEY, VECTOR_EMBEDDING_DIM
 from utils.ai_agent.constants import OpenAIModel
@@ -43,6 +44,9 @@ class AIAgent(ABC):
     def generate_short_desc(self, function_summary):
         pass
 
+    def update_task_list_based_on_function_desc(self, task_list, function_desc_map):
+        pass
+
 
 class OpenAI(AIAgent):
     def __init__(self):
@@ -60,14 +64,18 @@ class OpenAI(AIAgent):
         self.SOLVE_TASK_INPUT = "given the information :\n"
         self.SOLVE_TASK_QUESTION = "answer this: "
 
-    def _generate_params(self, prompt):
+    def _generate_params(self, prompt, context: List=None):
+        messages = context if context and len(context) else []
+        messages.append({"role": "user", "content": prompt})
+
         return {
                 "model": self.ai_model.model,
-                "messages": [{"role": "user", "content": prompt}]
+                "messages": messages,
+                "temperature": 0.2  # more focused
             }
     
-    def get_query(self, query):
-        data = self._generate_params(query)
+    def get_query(self, query, context=None):
+        data = self._generate_params(query, context)
         start_time = time.time()
         try:
             response = self.openai.ChatCompletion.create(**data)
@@ -161,18 +169,35 @@ class OpenAI(AIAgent):
     
     def get_task_breakup(self, query, func_desc_map):
         func_desc_query = ''
-        for k, v in func_desc_map.items():
-            func_desc_query += f"{k} - {v}\n"
+        if len(func_desc_map.keys()):
+            for k, v in func_desc_map.items():
+                func_desc_query += f"{k} - {v}\n"
 
-        func_desc_query += 'breakdown the following coding task by steps and return the steps. \
-            only return the steps, no other text. [ONLY return numbered steps]. use the function and \
-                their descriptions provided above to plan out things so that we can resuse maximum code: \n' + query
-        task_list = self.get_query(func_desc_query)
+            func_desc_query += 'breakdown the following coding task by steps and return the steps. \
+                only return the steps, no other text. [ONLY return numbered steps]. use the function and \
+                    their descriptions provided here to plan out things so that we can resuse maximum code: \n' + query
+        else:
+            func_desc_query = 'breakdown the following coding task by steps and return the steps. \
+                only return the steps, no other text. [ONLY return numbered steps]: ' + query
+        
+        context = [
+            {"role": "system", "content": "You are AI coding assistant which looks at given list of functions and figures out how to effectively achieve a task"},
+            {"role": "user", "content": "create_complex_num: creates a random complex number\n print_complex_num: prints a complex number\n\
+                breakdown the coding task by steps and return the steps. \
+                only return the steps, no other text. [ONLY return numbered steps]. use the function and \
+                    their descriptions provided here to generate tasks. Each task should be self sufficient and well defined: \ngenerate a random complex number and print it "},
+            {"role": "assistant", "content": "1. generate a random complex number using the function create_complex_num\n2. print the complex number using the function print_complex_num "},
+            {"role": "user", "content": "Above was just an example, now solve the tasks which I will provide further. Reply with 'yes' if you understand"},
+            {"role": "assistant", "content": "yes"}
+        ]
+        task_list = self.get_query(func_desc_query, context)
         task_list = task_list['output'].split('\n')
         return task_list
     
     def generate_task_code(self, task, similar_func_code):
-        base_query = 'generate the code for the following task (only return the python code). If you have any doubts or are not able to generate the code return the text "help: [your doubt/issue]":\n' + task
+        base_query = 'You are free to choose any logic, code or method the goal is to keep the final code as simple and short as possible.\
+              generate the code for the following task (only return the python code). If you have any doubts or are not able to generate\
+                  the code return the text "help: [your doubt/issue]":\n' + task
         if similar_func_code:
             query = 'given the following code of similar functions, try to use them directly or modify them: \n'
             for k, v in similar_func_code.items():
@@ -201,6 +226,43 @@ class OpenAI(AIAgent):
         query = 'in two lines or less, generate a short description of the given text:\n' + function_summary
         res = self.get_query(query)
         return res['output']
+    
+    # given a set of steps and set of functions already present in the code
+    # this function determines how to achieve them
+    def update_task_list_based_on_function_desc(self, task_list, func_desc_map):
+        if not len(func_desc_map.keys()):
+            return task_list
+        
+        func_desc_query = 'these functions are present in the code: \n'
+        for k, v in func_desc_map.items():
+            func_desc_query += f"{k} - {v}\n"
+
+        base_query = 'which functions given in this prompt can be used for solving this task list. \
+            ONLY return the list function names followed by a single line [SHORT DESCRIPTION] explaining how can the function be used.\
+                  If no function can be used then return NONE: \n'
+        for task in task_list:
+            base_query += task + '\n'
+        
+        func_desc_query += base_query
+        
+
+        context = [
+            {"role": "system", "content": "You are AI coding assistant which looks at given list of functions and figures out which of them can be useful in achieving a set of tasks"},
+            {"role": "user", "content": f"these functions are present in the code: \ncreate_complex_num: creates a random complex number\n print_complex_num: prints a complex number\n \
+                {base_query} 1. generate a random complex number \n 2. print the square of the complex number"},
+            {"role": "assistant", "content": "create_complex_num: this can be used to generate a complex number\nprint_complex_num: this can be used to print a complex number"},
+            {"role": "user", "content": f"these functions are present in the code: \ncreate_complex_num: creates a random complex number\n print_complex_num: prints a complex number\n \
+                {base_query} create a function to give me weather updates"},
+            {"role": "assistant", "content": "NONE"},
+            {"role": "user", "content": f"these functions are present in the code: \ncreate_complex_num: creates a random complex number\n print_complex_num: prints a complex number\n \
+                {base_query} take two numbers as input. form a complex number using these, first number will be real part, second will be imaginary part. then print that complex number"},
+            {"role": "assistant", "content": "print_complex_num: this can be used to print a complex number"},
+        ]
+
+        res_task = self.get_query(func_desc_query, context)
+        res_task = res_task['output'].split('\n')
+        return res_task
+        
 
 class TestAIAgent(AIAgent):
     def __init__(self):
@@ -235,6 +297,9 @@ class TestAIAgent(AIAgent):
     
     def fix_code_issues(self, final_code):
         return 'fixed code'
+    
+    def update_task_list_based_on_function_desc(self, task_list, func_desc_map):
+        return task_list
 
 def get_ai_agent(debug=False) -> AIAgent:
     if debug:
