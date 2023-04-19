@@ -47,6 +47,9 @@ class AIAgent(ABC):
     def update_task_list_based_on_function_desc(self, task_list, function_desc_map):
         pass
 
+    def regenerate_task_list(self, combined_task_list, combined_instructions):
+        pass
+
 
 class OpenAI(AIAgent):
     def __init__(self):
@@ -262,6 +265,26 @@ class OpenAI(AIAgent):
         res_task = self.get_query(func_desc_query, context)
         res_task = res_task['output'].split('\n')
         return res_task
+    
+    def regenerate_task_list(self, combined_task_list, combined_instructions):
+        base_query = 'use the following instructions to generate a new task list which make use of \
+            the functions mentioned. Remove the tasks which are not needed or already covered in other tasks. ONLY return the task list: \n'
+        query = 'given the task list: \n' + combined_task_list + '\n' + base_query + combined_instructions + '\n'
+        context = [
+                {"role": "system", "content": "You are AI coding assistant which returns the minimum number of tasks needed to complete a task list when useful functions are given"},
+                {"role": "user", "content": 'given the task list: \n' + '1. import libraries to get weather data 2.get weather data 3. convert temperature into celcius 4. print temperature' + base_query\
+                + 'fetch_weather_data: this provides weather information like temperature, humidity, and pressure'},
+                {"role": "assistant", "content": "1. get temperature through fetch_weather_data 2. convert temperature into celcius 3. print temperature"},
+                {"role": "user", "content": 'given the task list: \n' + '1. import libraries to get weather data 2.get weather data 3. convert temperature into celcius 4. print temperature' + base_query\
+                + 'get_temperature: this provides temperature data in celcius'},
+                {"role": "assistant", "content": "1. get temperature through get_temperature 2. print temperature"},
+            ]
+        res = self.get_query(query, context)
+        print("\033[1;32mtasks_regenerated:\033[0m Task completed successfully.")
+        print('=> Generated task list: \n', res['output'])
+        task_list = res['output'].split('\n')
+
+        return task_list
         
 
 class TestAIAgent(AIAgent):
@@ -300,6 +323,9 @@ class TestAIAgent(AIAgent):
     
     def update_task_list_based_on_function_desc(self, task_list, func_desc_map):
         return task_list
+    
+    def regenerate_task_list(self, combined_task_list, combined_instructions):
+        return combined_task_list.split('\n')
 
 def get_ai_agent(debug=False) -> AIAgent:
     if debug:

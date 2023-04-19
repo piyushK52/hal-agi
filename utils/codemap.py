@@ -1,4 +1,6 @@
+from abc import ABC
 import ast
+import inspect
 import os
 
 
@@ -6,7 +8,7 @@ class CodeWorkspaceClient:
     def __init__(self):
         # TODO: automatically pick everything from gitignore
         self.exclude_dirs = ['build', 'dist', '__pycache__', '.vscode', 'venv', '.git', '.DS_Store', 'videos']
-        self.exclude_files = ['README.md', 'LICENSE.txt', '.env', '.gitignore', 'requirements.txt', '__init__.py', 'dev.yaml', 'generated_code.py']
+        self.exclude_files = ['README.md', 'LICENSE.txt', '.env', '.env-example', '.gitignore', 'requirements.txt', '__init__.py', 'dev.yaml', 'generated_code.py']
 
     def create_code_tree(self, code_str):
         funcs = {}
@@ -23,9 +25,13 @@ class CodeWorkspaceClient:
                 for child_node in ast.iter_child_nodes(node):
                     traverse(child_node, funcs, name, current_class)
             elif isinstance(node, ast.ClassDef):
-                current_class = node.name
-                for child_node in ast.iter_child_nodes(node):
-                    traverse(child_node, funcs, current_func, current_class)
+                # ignoring abstract and test classes
+                if not any(inspect.isclass(base) and issubclass(base, ABC) for base in node.bases) and not node.name.startswith("Test"):
+                    current_class = node.name
+                    for child_node in ast.iter_child_nodes(node):
+                        traverse(child_node, funcs, current_func, current_class)
+                else:
+                    current_class = None
             elif isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Name):
                     func_name = node.func.id
