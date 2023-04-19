@@ -36,14 +36,15 @@ def main():
     workspace_client = CodeWorkspaceClient()
     ai_agent = get_ai_agent(debug=not use_open_ai_agent)
     db_client = get_vector_db_client()
-    
+
     # TODO: change the logic here
     # only running the code below if the DB is empty
     all_data = db_client.fetch_all_data()
     if not len(all_data):
         # generate code tree
         code_tree = workspace_client.generate_code_tree_for_workspace()
-        print("generated code tree:  \n", code_tree)
+        print("\033[1;32mcode tree generated\033[0m")
+        print(code_tree)
 
         # generate description for every function
         for k, _ in code_tree.items():
@@ -66,10 +67,6 @@ def main():
                     # if no internal methods are present then fetching the entire class code
                     class_code = workspace_client.fetch_function_code(k)
                     func_summary_map[k] = ai_agent.get_class_summary(k, class_code, {})
-        
-        # printing summaries
-        for func, summary in func_summary_map.items():
-            print(func, " : ", summary)
 
         # store the description in the vector database
         for idx, (func, summary) in enumerate(func_summary_map.items()):
@@ -79,6 +76,8 @@ def main():
             db_client.add_vector_data([data])
 
         all_data = db_client.fetch_all_data()
+
+    print("\033[1;32mcode tree loaded in the db\033[0m")
     
     # take task input and convert into steps
     function_desc_map = {}
@@ -88,7 +87,7 @@ def main():
     task = input("enter task: ")
     # task = "write the code to take a text input and print a vector embedding generated from it"
     task_list = ai_agent.get_task_breakup(task, {})
-    print('=> Task list generated')
+    print("\033[1;32minitial task list:\033[0m")
     for t in task_list:
         print(t)
 
@@ -112,32 +111,38 @@ def main():
         combined_task_list += t + '\n'
     
     task_list = ai_agent.regenerate_task_list(combined_task_list, combined_instructions)
+    task_list = ai_agent.filter_numbered_list(task_list)
 
     # derive code for the steps
     # create a new code file
     with open("generated_code.py", "w") as f:
-        print('=> Python file created')
+        # print("\033[1;32moutput file generated\033[0m")
         pass
 
     final_code = ''
-    # index_of_empty = next((i for i, s in enumerate(task_list) if s == ""), len(task_list))
-    # task_list = task_list[index_of_empty:]
 
     if generate_code_file:
         for task in task_list:
             task_embedding = ai_agent.get_text_embedding(task)
             top_similar_function = db_client.fetch_similar_vector_data(task_embedding, 3)
             function_code_list = {}
+            class_init_list = {}
             for func in top_similar_function:
                 function_code = workspace_client.fetch_function_code(func.function_name)
                 function_code_list[func.function_name] = function_code
+                if '.' in func.function_name:
+                    code = workspace_client.search_directory_for_class_init("./", class_name=func.function_name.split('.')[0])
+                    # for abstract classes there won't be an init
+                    if code:
+                        class_init_list[func.function_name] = code.strip()
 
-            generated_code = ai_agent.generate_task_code(task, function_code_list)
+
+            generated_code = ai_agent.generate_task_code(task, function_code_list, class_init_list)
 
             while "help: " in generated_code:
                 print('task - ', task)
                 help_input = input('provide for info regarding this query: \n' + generated_code + ': ')
-                generated_code = ai_agent.generate_task_code(task + 'given: ' + help_input, function_code_list)
+                generated_code = ai_agent.generate_task_code(task + f'given answer to this query {generated_code}: ' + help_input, function_code_list)
 
             # adding the code to the file
             final_code += '\n'
@@ -145,11 +150,13 @@ def main():
 
         
         # fixing the code
+        print("\033[1;32mfixing minor issues\033[0m")
         final_code = ai_agent.fix_code_issues(final_code)
+        
         with open("generated_code.py", "w") as f:
             f.write("\n")
             f.write(final_code)
-
+        print("\033[1;32moutput file generated\033[0m")
 
 if __name__ == '__main__':
     main()

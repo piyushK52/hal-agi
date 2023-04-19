@@ -156,3 +156,42 @@ class CodeWorkspaceClient:
                             for line in node.body:
                                 function_code += ast.unparse(line) + '\n'
         return function_code
+    
+    def find_class_init(self, filepath, class_name):
+        with open(filepath, "r") as f:
+            source = f.read()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) or isinstance(node, ast.Return):
+                if isinstance(node.value, ast.Call):
+                    if isinstance(node.value.func, ast.Name) and node.value.func.id == class_name:
+                        return node.lineno, source.split("\n")[node.lineno - 1]
+        return None
+
+    def search_directory_for_class_init(self, dirname, class_name):
+        for dirpath, dirnames, filenames in os.walk(dirname):
+            if any(x in dirpath for x in self.exclude_dirs):
+                continue
+            for filename in filenames:
+                if filename.endswith(".py"):
+                    filepath = os.path.join(dirpath, filename)
+                    result = self.find_class_init(filepath, class_name)
+                    if result:
+                        return result[1]
+
+    def get_import_path(self, directory, class_name):
+        for dirpath, dirnames, filenames in os.walk(directory):
+            if any(x in dirpath for x in self.exclude_dirs):
+                    continue
+            for filename in filenames:
+                if filename.endswith(".py"):
+                    filepath = os.path.join(dirpath, filename)
+                    with open(filepath, "r") as f:
+                        source = f.read()
+                    tree = ast.parse(source)
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.ClassDef) and node.name == class_name:
+                            module_path = os.path.relpath(filepath, directory)
+                            module_path = module_path.replace(os.sep, ".")[:-3]
+                            return f"from {module_path} import {class_name}"
+        return None

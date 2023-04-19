@@ -2,6 +2,7 @@ from abc import ABC
 import time
 import random
 from typing import List
+import re
 
 from settings import FORCE_SUB_TASK_CREATION, OPENAI_API_KEY, VECTOR_EMBEDDING_DIM
 from utils.ai_agent.constants import OpenAIModel
@@ -35,7 +36,7 @@ class AIAgent(ABC):
     def get_task_breakup(self, query, func_desc_map):
         pass
 
-    def generate_task_code(self, task, similar_func_code):
+    def generate_task_code(self, task, similar_func_code, class_init_code):
         pass
 
     def fix_code_issues(self, final_code):
@@ -50,6 +51,9 @@ class AIAgent(ABC):
     def regenerate_task_list(self, combined_task_list, combined_instructions):
         pass
 
+    def filter_numbered_list(self, task_list):
+        pass
+
 
 class OpenAI(AIAgent):
     def __init__(self):
@@ -58,6 +62,8 @@ class OpenAI(AIAgent):
         self.openai = openai
         openai.api_key = OPENAI_API_KEY
         self.ai_model = OpenAIModel.gpt_turbo
+        self.temperature = 0
+        self.print_queries = True
         self._set_prompts()
     
     def _set_prompts(self):
@@ -74,11 +80,25 @@ class OpenAI(AIAgent):
         return {
                 "model": self.ai_model.model,
                 "messages": messages,
-                "temperature": 0.2  # more focused
+                "temperature": self.temperature
             }
     
     def get_query(self, query, context=None):
+        # removing random whitespaces 
+        query = re.sub(' +', ' ', query)
+        if context:
+            for row in context:
+                row["role"] = re.sub(' +', ' ', row["role"])
+                row["content"] = re.sub(' +', ' ', row["content"])
+        
         data = self._generate_params(query, context)
+
+        if self.print_queries:
+            print("\033[34mquery text\033[0m")
+            print(query)
+            print("\033[33mcontext\033[0m")
+            print(context)
+
         start_time = time.time()
         try:
             response = self.openai.ChatCompletion.create(**data)
@@ -197,7 +217,7 @@ class OpenAI(AIAgent):
         task_list = task_list['output'].split('\n')
         return task_list
     
-    def generate_task_code(self, task, similar_func_code):
+    def generate_task_code(self, task, similar_func_code, class_init_code):
         base_query = 'You are free to choose any logic, code or method the goal is to keep the final code as simple and short as possible.\
               generate the code for the following task (only return the python code). If you have any doubts or are not able to generate\
                   the code return the text "help: [your doubt/issue]":\n' + task
@@ -206,6 +226,12 @@ class OpenAI(AIAgent):
             for k, v in similar_func_code.items():
                 query += 'function: ' + k + '\n'
                 query += 'code: ' + v + '\n'
+
+            if class_init_code:
+                query += 'following is sample code for how to initialize given classes: \n'
+                for k, v in class_init_code.items():
+                    query += 'class: ' + k + '\n'
+                    query += 'code: ' + v + '\n'
             
             base_query = query + base_query
         
@@ -214,14 +240,30 @@ class OpenAI(AIAgent):
     
     def fix_code_issues(self, final_code):
         code_issues = [
-            'remove unnecessary text from the code',
-            'fix syntax errors in the code',
-            'fix any bugs that you think the code might have'
+            'unnecessary text in the code',
+            'syntax errors in the code',
+            'any bugs that you think the code might have'
         ]
-        query = 'fix the following issues in the given code: \n'
+
+        query = 'does this code has any of the following issues. Only respond with yes or no: \n'
         for issue in code_issues:
             query += issue + '\n'
+
         query += 'code: ' + '\n' + final_code
+        res = self.get_query(query)
+        print("response of the first check: ", res['output'])
+        if res and 'yes' in res['output'].lower():
+            query = 'fix the following issues in the given code. If there are no issues with the code then return it as it is: \n'
+            for issue in code_issues:
+                query += issue + '\n'
+
+            query += 'code: ' + '\n' + final_code
+            res = self.get_query(query)
+            final_code = res['output']
+
+        # additional fixing
+        query = 'this code is not working, fix this code. If everything is fine just return the code as it is. Make any changes that you wish is necessary. ONLY provide the code in the response. No other text: \n'
+        query += final_code
         res = self.get_query(query)
         return res['output']
     
@@ -240,9 +282,9 @@ class OpenAI(AIAgent):
         for k, v in func_desc_map.items():
             func_desc_query += f"{k} - {v}\n"
 
-        base_query = 'which functions given in this prompt can be used for solving this task list. \
-            ONLY return the list function names followed by a single line [SHORT DESCRIPTION] explaining how can the function be used.\
-                  If no function can be used then return NONE: \n'
+        base_query = 'which functions given in this prompt can be used for solving this task list. You may also use python in-built functions \
+            ONLY return the list function names followed by a single line [SHORT DESCRIPTION] explaining \
+                how can the function be used and which steps can be solved. If no function can be used then return NONE: \n'
         for task in task_list:
             base_query += task + '\n'
         
@@ -267,25 +309,37 @@ class OpenAI(AIAgent):
         return res_task
     
     def regenerate_task_list(self, combined_task_list, combined_instructions):
-        base_query = 'use the following instructions to generate a new task list which make use of \
-            the functions mentioned. Remove the tasks which are not needed or already covered in other tasks. ONLY return the task list: \n'
-        query = 'given the task list: \n' + combined_task_list + '\n' + base_query + combined_instructions + '\n'
+        base_query = '\n\nusing the functions provides in this prompt create a new task list. For example if there are \
+            10 steps, but they can be solved by a single function "xyz" then return a single step mentioning \
+                "use xyz to solve these steps". Find the current steps below, reduce this on the basis of functions provided above: \n'
+        opening_instruction = "you are a super efficient coding AI. please understand the use cases of the function below:\n"
+        query = opening_instruction + combined_task_list + '\n' + base_query + combined_instructions + '\n'
         context = [
                 {"role": "system", "content": "You are AI coding assistant which returns the minimum number of tasks needed to complete a task list when useful functions are given"},
-                {"role": "user", "content": 'given the task list: \n' + '1. import libraries to get weather data 2.get weather data 3. convert temperature into celcius 4. print temperature' + base_query\
+                {"role": "user", "content": opening_instruction + '1. import libraries to get weather data 2.get weather data 3. convert temperature into celcius 4. print temperature' + base_query\
                 + 'fetch_weather_data: this provides weather information like temperature, humidity, and pressure'},
                 {"role": "assistant", "content": "1. get temperature through fetch_weather_data 2. convert temperature into celcius 3. print temperature"},
-                {"role": "user", "content": 'given the task list: \n' + '1. import libraries to get weather data 2.get weather data 3. convert temperature into celcius 4. print temperature' + base_query\
+                {"role": "user", "content": opening_instruction + '1. import libraries to get weather data 2.get weather data 3. convert temperature into celcius 4. print temperature' + base_query\
                 + 'get_temperature: this provides temperature data in celcius'},
                 {"role": "assistant", "content": "1. get temperature through get_temperature 2. print temperature"},
             ]
         res = self.get_query(query, context)
-        print("\033[1;32mtasks_regenerated:\033[0m Task completed successfully.")
+        print("\033[1;32mupdated task list:\033[0m Task completed successfully.")
         print('=> Generated task list: \n', res['output'])
         task_list = res['output'].split('\n')
 
         return task_list
+    
+    def filter_numbered_list(self, task_list):
+        query = 'Below are a list of tasks. Filter out non-empty task and return the list. \
+            Also filter out any tasks which require installing/adding new libraries or plugins.\
+                  ONLY return the task list and no other accompanying text: \n'
+        for task in task_list:
+            query += task + '\n'
         
+        res = self.get_query(query)
+        task_list = res['output'].split('\n')
+        return task_list
 
 class TestAIAgent(AIAgent):
     def __init__(self):
@@ -312,7 +366,7 @@ class TestAIAgent(AIAgent):
     def get_task_breakup(self, query, func_desc_map):
         return ['code', 'code some more']
     
-    def generate_task_code(self, task, similar_func_code):
+    def generate_task_code(self, task, similar_func_code, class_init_code):
         return 'some random code'
     
     def generate_short_desc(self, function_summary):
@@ -326,6 +380,9 @@ class TestAIAgent(AIAgent):
     
     def regenerate_task_list(self, combined_task_list, combined_instructions):
         return combined_task_list.split('\n')
+    
+    def filter_numbered_list(self, task_list):
+        return task_list
 
 def get_ai_agent(debug=False) -> AIAgent:
     if debug:
